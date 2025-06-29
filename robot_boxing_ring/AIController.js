@@ -18,7 +18,7 @@ export default class AIController {
     const prompt = this.buildPrompt();
     setTimeout(() => {
       this.socket.emit("llama_decision", { prompt });
-    }, 200 + Math.random() * 300);
+    }, 100 + Math.random() * 200);
   }
 
   buildPrompt() {
@@ -42,17 +42,113 @@ export default class AIController {
     );
   }
 
+  analyzeOpponent() {
+    if (!this.opponent.actionHistory) this.opponent.actionHistory = [];
+    this.opponent.actionHistory.push(this.opponent.lastAction);
+    if (this.opponent.actionHistory.length > 10)
+      this.opponent.actionHistory.shift();
+    const attacks = this.opponent.actionHistory.filter(
+      (a) => a === "attack"
+    ).length;
+    const defends = this.opponent.actionHistory.filter(
+      (a) => a === "defend"
+    ).length;
+    const dodges = this.opponent.actionHistory.filter(
+      (a) => a === "dodge"
+    ).length;
+    return { attacks, defends, dodges };
+  }
+
+  chooseCombo() {
+    const combos = [
+      ["attack", "attack", "attack"],
+      ["attack", "attack", "defend"],
+      ["attack", "dodge", "attack"],
+      ["attack", "attack", "attack", "defend"],
+      ["attack", "defend", "attack"],
+    ];
+    return combos[Math.floor(Math.random() * combos.length)];
+  }
+
+  forceActivity() {
+    if (
+      !this.robot.isAttacking &&
+      !this.robot.isDefending &&
+      !this.robot.isDodging &&
+      !this.robot.animState
+    ) {
+      this.robot.forceActivity();
+    }
+  }
+
   handleLlamaResponse(response) {
     this.isThinking = false;
     const action = this.parseAction(response);
+    const oppStats = this.analyzeOpponent();
+
+    if (oppStats.defends > 3 && Math.random() > 0.2) {
+      this.robot.startCombo(this.chooseCombo(), this.opponent);
+      this.lastDecision = "combo";
+      return;
+    }
+    if (oppStats.attacks > 3 && Math.random() > 0.4) {
+      this.robot.dodge();
+      this.lastDecision = "dodge";
+      return;
+    }
+
+    if (
+      !this.opponent.isAttacking &&
+      !this.opponent.isDefending &&
+      !this.opponent.isDodging &&
+      Math.random() > 0.3
+    ) {
+      if (Math.random() > 0.5) {
+        this.robot.startCombo(this.chooseCombo(), this.opponent);
+        this.lastDecision = "combo";
+      } else {
+        this.robot.attack(this.opponent);
+        this.lastDecision = "attack";
+      }
+      return;
+    }
+
     if (action) {
-      if (action === "attack") this.robot.attack(this.opponent);
-      if (action === "defend") this.robot.defend();
-      if (action === "dodge") this.robot.dodge();
-      this.lastDecision = action;
+      if (action === "attack") {
+        if (Math.random() > 0.4) {
+          this.robot.startCombo(this.chooseCombo(), this.opponent);
+          this.lastDecision = "combo";
+        } else {
+          this.robot.attack(this.opponent);
+          this.lastDecision = "attack";
+        }
+      }
+      if (action === "defend") {
+        this.robot.defend();
+        this.lastDecision = "defend";
+      }
+      if (action === "dodge") {
+        this.robot.dodge();
+        this.lastDecision = "dodge";
+      }
     } else {
-      // Fallback: случайное действие, если LLaMA не ответила нормально
-      this.robot.decideAction(this.opponent);
+      const actions = ["attack", "attack", "attack", "defend", "dodge"];
+      const action = actions[Math.floor(Math.random() * actions.length)];
+      if (action === "attack") {
+        if (Math.random() > 0.3) {
+          this.robot.startCombo(this.chooseCombo(), this.opponent);
+          this.lastDecision = "combo";
+        } else {
+          this.robot.attack(this.opponent);
+          this.lastDecision = "attack";
+        }
+      } else if (action === "defend") {
+        this.robot.defend();
+        this.lastDecision = "defend";
+      } else {
+        this.robot.dodge();
+        this.lastDecision = "dodge";
+      }
     }
   }
 

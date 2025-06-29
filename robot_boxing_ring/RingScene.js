@@ -206,6 +206,7 @@ export default class RingScene {
     requestAnimationFrame(this.animate);
     const delta = this.clock.getDelta();
     let shake = 0;
+    // Усиленная тряска камеры при сильных ударах и комбо
     if (
       this.robot1.animState === "hit" ||
       this.robot2.animState === "hit" ||
@@ -215,6 +216,37 @@ export default class RingScene {
       this.robot2.animState === "hook"
     ) {
       shake = Math.sin(performance.now() * 0.04) * 0.18;
+      // Если был недавний сильный удар — усиливаем shake
+      if (
+        this.robot1.lastHitTime &&
+        performance.now() - this.robot1.lastHitTime < 300
+      )
+        shake *= 2.2;
+      if (
+        this.robot2.lastHitTime &&
+        performance.now() - this.robot2.lastHitTime < 300
+      )
+        shake *= 2.2;
+    }
+    // Динамическое освещение: вспышка при попадании
+    if (
+      this.robot1.lastHitTime &&
+      performance.now() - this.robot1.lastHitTime < 120
+    ) {
+      this.scene.children.forEach((obj) => {
+        if (obj.isLight) obj.intensity = 2.5;
+      });
+    } else if (
+      this.robot2.lastHitTime &&
+      performance.now() - this.robot2.lastHitTime < 120
+    ) {
+      this.scene.children.forEach((obj) => {
+        if (obj.isLight) obj.intensity = 2.5;
+      });
+    } else {
+      this.scene.children.forEach((obj) => {
+        if (obj.isLight) obj.intensity = 1.2;
+      });
     }
     // Камера с тряской
     this.camera.position.set(shake, 8 + shake * 0.2, 10 + shake * 0.2);
@@ -224,8 +256,28 @@ export default class RingScene {
       if (!this.ai2.isThinking) this.ai2.requestDecision();
       this.robot1.update(this.robot2, delta);
       this.robot2.update(this.robot1, delta);
+      // Принудительная активность роботов
+      if (
+        !this.ai1.isThinking &&
+        !this.robot1.isAttacking &&
+        !this.robot1.isDefending &&
+        !this.robot1.isDodging &&
+        !this.robot1.animState
+      ) {
+        this.ai1.forceActivity();
+      }
+      if (
+        !this.ai2.isThinking &&
+        !this.robot2.isAttacking &&
+        !this.robot2.isDefending &&
+        !this.robot2.isDodging &&
+        !this.robot2.animState
+      ) {
+        this.ai2.forceActivity();
+      }
       this.updateScoreboard();
     }
+    // TODO: визуализация частиц (эффекты попаданий)
     this.renderer.render(this.scene, this.camera);
   }
 }

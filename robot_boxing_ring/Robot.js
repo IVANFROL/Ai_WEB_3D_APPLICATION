@@ -28,6 +28,16 @@ export default class Robot {
     this.mesh = this.createMesh();
     this.scene.add(this.mesh);
     this.hits = 0; // Счётчик успешных попаданий
+    this.actionQueue = [];
+    this.comboActive = false;
+    this.fatigue = 0; // уровень усталости
+    this.lastHitTime = 0;
+    this.particleGroup = null; // для эффектов попаданий
+    this.idleState = "breathing"; // breathing, warming_up, taunting, aggressive_stance
+    this.idleTimer = 0;
+    this.reactionToOpponent = null;
+    this.microMovements = true;
+    this.aggressionLevel = 0;
   }
 
   createMesh() {
@@ -316,13 +326,13 @@ export default class Robot {
     return pos;
   }
 
-  attack(opponent) {
+  attack(opponent, fromCombo = false) {
     this.isAttacking = true;
     this.lastAction = "attack";
     const dir = opponent.position.clone().sub(this.position).normalize();
     const moveVec = dir.multiplyScalar(0.7);
-    // Случайный тип удара
-    const punchTypes = ["jab", "hook", "uppercut"];
+    // Если комбо — выбираем следующий удар из расширенного списка
+    const punchTypes = ["jab", "hook", "uppercut", "body", "cross"];
     this.currentPunch =
       punchTypes[Math.floor(Math.random() * punchTypes.length)];
     this.startAnimation(moveVec);
@@ -331,16 +341,24 @@ export default class Robot {
       opponent.takeHit();
       this.score++;
       this.hits++;
+      this.lastHitTime = performance.now();
+      this.spawnHitParticles();
     }
     setTimeout(() => {
       this.isAttacking = false;
       this.position.add(moveVec);
       this.position = this.clampToRingBounds(this.position);
       this.basePosition.copy(this.position);
+      // Если комбо ещё не закончено — продолжаем
+      if (fromCombo && this.actionQueue.length > 0) {
+        // Следующее действие будет взято из очереди в update
+      } else {
+        this.comboActive = false;
+      }
     }, 400);
   }
 
-  defend() {
+  defend(fromCombo = false) {
     this.isDefending = true;
     this.lastAction = "defend";
     const moveVec = this.position
@@ -355,10 +373,16 @@ export default class Robot {
       this.position.add(moveVec);
       this.position = this.clampToRingBounds(this.position);
       this.basePosition.copy(this.position);
+      // Если комбо ещё не закончено — продолжаем
+      if (fromCombo && this.actionQueue.length > 0) {
+        // Следующее действие будет взято из очереди в update
+      } else {
+        this.comboActive = false;
+      }
     }, 400);
   }
 
-  dodge() {
+  dodge(fromCombo = false) {
     this.isDodging = true;
     this.lastAction = "dodge";
     const side = this.name === "Orange" ? 1 : -1;
@@ -370,6 +394,12 @@ export default class Robot {
       this.position.add(moveVec);
       this.position = this.clampToRingBounds(this.position);
       this.basePosition.copy(this.position);
+      // Если комбо ещё не закончено — продолжаем
+      if (fromCombo && this.actionQueue.length > 0) {
+        // Следующее действие будет взято из очереди в update
+      } else {
+        this.comboActive = false;
+      }
     }, 400);
   }
 
@@ -515,36 +545,208 @@ export default class Robot {
         this.animState = null;
       }
     }
+    // Выполнение очереди действий (комбо)
     if (
+      this.actionQueue.length > 0 &&
       !this.isAttacking &&
       !this.isDefending &&
       !this.isDodging &&
-      this.health > 0 &&
-      this.targetOffset.lengthSq() === 0 &&
       !this.animState
     ) {
-      this.decideAction(opponent);
+      const next = this.actionQueue.shift();
+      if (next.action === "attack") this.attack(next.opponent, true);
+      if (next.action === "defend") this.defend(true);
+      if (next.action === "dodge") this.dodge(true);
     }
-    // Idle-анимация: микродвижения кистей, стоп, плеч
+    // Реакция на противника
+    this.reactToOpponent(opponent);
+    // Расширенная idle-анимация с множеством состояний
     if (
       !this.isAttacking &&
       !this.isDefending &&
       !this.isDodging &&
       !this.animState
     ) {
+      this.idleTimer += delta;
       const t = performance.now() * 0.001 + (this.name === "Orange" ? 0 : 1);
-      this.chest.position.x = Math.sin(t) * 0.04;
-      this.chest.position.z = Math.cos(t) * 0.03;
-      this.chest.rotation.y = Math.sin(t * 0.7) * 0.07;
-      this.head.position.x = Math.sin(t * 1.2) * 0.03;
-      this.leftShoulder.rotation.z = Math.sin(t * 1.5) * 0.08;
-      this.rightShoulder.rotation.z = -Math.sin(t * 1.5) * 0.08;
+
+      // Смена состояния каждые 3-5 секунд
+      if (this.idleTimer > 3 + Math.random() * 2) {
+        this.changeIdleState();
+      }
+
+      // Базовое дыхание всегда присутствует
+      const breath = Math.sin(t * 1.1) * 0.06 * (1 - this.fatigue * 0.5);
+      this.chest.position.y = 0.4 + breath;
+      this.head.position.y = breath * 0.5;
+
+      // Различные idle-состояния
+      if (this.idleState === "breathing") {
+        // Спокойное дыхание + микродвижения
+        this.chest.position.x = Math.sin(t) * 0.04;
+        this.chest.position.z = Math.cos(t) * 0.03;
+        this.chest.rotation.y = Math.sin(t * 0.7) * 0.07;
+        this.head.position.x = Math.sin(t * 1.2) * 0.03;
+        this.leftShoulder.rotation.z = Math.sin(t * 1.5) * 0.08;
+        this.rightShoulder.rotation.z = -Math.sin(t * 1.5) * 0.08;
+        this.leftThigh.rotation.x = Math.sin(t * 1.1) * 0.04;
+        this.rightThigh.rotation.x = -Math.sin(t * 1.1) * 0.04;
+        this.leftHand.position.y = Math.sin(t * 2.1) * 0.03;
+        this.rightHand.position.y = -Math.sin(t * 2.1) * 0.03;
+        this.leftFoot.position.x = Math.sin(t * 1.7) * 0.02;
+        this.rightFoot.position.x = -Math.sin(t * 1.7) * 0.02;
+      } else if (this.idleState === "warming_up") {
+        // Разминка: более активные движения
+        this.chest.rotation.y = Math.sin(t * 2) * 0.15;
+        this.leftShoulder.rotation.x = Math.sin(t * 3) * 0.2;
+        this.rightShoulder.rotation.x = Math.sin(t * 3 + 1) * 0.2;
+        this.leftUpperArm.rotation.x = Math.sin(t * 4) * 0.3;
+        this.rightUpperArm.rotation.x = Math.sin(t * 4 + 1) * 0.3;
+        this.head.rotation.y = Math.sin(t * 1.5) * 0.1;
+        this.chest.position.x = Math.sin(t * 2.5) * 0.08;
+        this.chest.position.z = Math.cos(t * 2.5) * 0.06;
+      } else if (this.idleState === "taunting") {
+        // Провокации: покачивание головой, движения рук
+        this.head.rotation.y = Math.sin(t * 2.5) * 0.2;
+        this.head.rotation.z = Math.sin(t * 1.8) * 0.1;
+        this.leftShoulder.rotation.z = Math.sin(t * 3) * 0.3;
+        this.rightShoulder.rotation.z = -Math.sin(t * 3) * 0.3;
+        this.leftHand.position.x = Math.sin(t * 4) * 0.1;
+        this.rightHand.position.x = -Math.sin(t * 4) * 0.1;
+        this.chest.rotation.y = Math.sin(t * 1.2) * 0.12;
+      } else if (this.idleState === "aggressive_stance") {
+        // Агрессивная стойка: напряжённая поза, покачивание
+        this.chest.rotation.x = -0.05;
+        this.head.position.y = 0.02;
+        this.leftShoulder.rotation.x = -0.1;
+        this.rightShoulder.rotation.x = -0.1;
+        this.chest.position.z = -0.05;
+        this.chest.rotation.y = Math.sin(t * 1.8) * 0.08;
+        this.head.rotation.y = Math.sin(t * 2.2) * 0.15;
+        this.leftHand.position.y = -0.05;
+        this.rightHand.position.y = -0.05;
+      }
+
+      // Реакции на противника
+      if (this.reactionToOpponent === "defensive_ready") {
+        // Готовность к защите
+        this.chest.position.z = -0.1;
+        this.leftShoulder.rotation.x = -0.2;
+        this.rightShoulder.rotation.x = -0.2;
+        this.head.position.y = 0.03;
+      } else if (this.reactionToOpponent === "frustrated") {
+        // Раздражение
+        this.head.rotation.y = Math.sin(t * 5) * 0.1;
+        this.chest.rotation.y = Math.sin(t * 3) * 0.1;
+        this.leftHand.position.y = Math.sin(t * 6) * 0.05;
+        this.rightHand.position.y = Math.sin(t * 6) * 0.05;
+      } else if (this.reactionToOpponent === "tired") {
+        // Усталость
+        this.chest.position.y = 0.35;
+        this.head.position.y = -0.02;
+        this.chest.rotation.x = -0.08;
+        this.leftShoulder.rotation.x = -0.05;
+        this.rightShoulder.rotation.x = -0.05;
+      }
+
+      // Микродвижения ног (всегда активны)
       this.leftThigh.rotation.x = Math.sin(t * 1.1) * 0.04;
       this.rightThigh.rotation.x = -Math.sin(t * 1.1) * 0.04;
-      this.leftHand.position.y = Math.sin(t * 2.1) * 0.03;
-      this.rightHand.position.y = -Math.sin(t * 2.1) * 0.03;
       this.leftFoot.position.x = Math.sin(t * 1.7) * 0.02;
       this.rightFoot.position.x = -Math.sin(t * 1.7) * 0.02;
+    }
+    // Усталость накапливается при ударах
+    if (this.isAttacking || this.isDefending || this.isDodging) {
+      this.fatigue = Math.min(1, this.fatigue + delta * 0.12);
+    } else {
+      this.fatigue = Math.max(0, this.fatigue - delta * 0.05);
+    }
+  }
+
+  // Новый метод: добавить действие в очередь
+  queueAction(action, opponent) {
+    this.actionQueue.push({ action, opponent });
+  }
+
+  // Новый метод: запуск комбо
+  startCombo(combo, opponent) {
+    this.comboActive = true;
+    combo.forEach((action) => this.queueAction(action, opponent));
+  }
+
+  // Эффект частиц при попадании
+  spawnHitParticles() {
+    if (!this.particleGroup) {
+      const geometry = new THREE.BufferGeometry();
+      const positions = [];
+      for (let i = 0; i < 20; i++) {
+        positions.push(
+          (Math.random() - 0.5) * 0.3,
+          Math.random() * 0.3,
+          (Math.random() - 0.5) * 0.3
+        );
+      }
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(positions, 3)
+      );
+      const material = new THREE.PointsMaterial({
+        color: 0xffe066,
+        size: 0.08,
+      });
+      this.particleGroup = new THREE.Points(geometry, material);
+      this.head.add(this.particleGroup);
+      setTimeout(() => {
+        if (this.particleGroup) {
+          this.head.remove(this.particleGroup);
+          this.particleGroup = null;
+        }
+      }, 250);
+    }
+  }
+
+  // Новый метод: смена idle-состояния
+  changeIdleState() {
+    const states = ["breathing", "warming_up", "taunting", "aggressive_stance"];
+    this.idleState = states[Math.floor(Math.random() * states.length)];
+    this.idleTimer = 0;
+  }
+
+  // Новый метод: реакция на действия противника
+  reactToOpponent(opponent) {
+    if (
+      opponent.isAttacking &&
+      !this.isAttacking &&
+      !this.isDefending &&
+      !this.isDodging
+    ) {
+      // Противник атакует — показываем готовность к защите
+      this.reactionToOpponent = "defensive_ready";
+      this.aggressionLevel = Math.min(1, this.aggressionLevel + 0.1);
+    } else if (opponent.lastAction === "attack" && opponent.hits > this.hits) {
+      // Противник успешно атакует — показываем раздражение
+      this.reactionToOpponent = "frustrated";
+      this.aggressionLevel = Math.min(1, this.aggressionLevel + 0.15);
+    } else if (this.health < 50) {
+      // Мало здоровья — показываем усталость
+      this.reactionToOpponent = "tired";
+    } else {
+      this.reactionToOpponent = null;
+    }
+  }
+
+  // Новый метод: принудительная активность
+  forceActivity() {
+    if (
+      !this.isAttacking &&
+      !this.isDefending &&
+      !this.isDodging &&
+      !this.animState
+    ) {
+      const activities = ["warming_up", "taunting", "aggressive_stance"];
+      this.idleState =
+        activities[Math.floor(Math.random() * activities.length)];
+      this.idleTimer = 0;
     }
   }
 }
