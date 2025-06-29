@@ -1,0 +1,14 @@
+{
+  "name": "robot-boxing-ring",
+  "version": "1.0.0",
+  "description": "Интерактивная сцена: два AI-робота сражаются на ринге по правилам бокса с интеграцией LLaMA.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.4",
+    "axios": "^1.6.7"
+  }
+}
