@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D AI Learning Character</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Header -->
+      <header class="header">
+        <h1>🤖 3D AI Learning Character</h1>
+        <div class="connection-status" id="connectionStatus">
+          <span class="status-dot"></span>
+          <span class="status-text">Подключение...</span>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- 3D Scene Container -->
+        <div class="scene-container">
+          <canvas id="sceneCanvas"></canvas>
+          <div class="scene-overlay">
+            <div class="controls-info">
+              <h3>Управление:</h3>
+              <p>WASD - Движение</p>
+              <p>Пробел - Прыжок</p>
+              <p>Shift - Присесть</p>
+              <p>R - Сброс позиции</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+          <!-- AI Learning Stats -->
+          <div class="stats-section">
+            <h3>📊 Статистика обучения</h3>
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-label">Попытки:</span>
+                <span class="stat-value" id="attemptsCount">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Успешные:</span>
+                <span class="stat-value" id="successfulMoves">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Неудачные:</span>
+                <span class="stat-value" id="failedMoves">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Процент успеха:</span>
+                <span class="stat-value" id="successRate">0%</span>
+              </div>
+            </div>
+
+            <div class="progress-bar">
+              <div class="progress-fill" id="learningProgress"></div>
+            </div>
+
+            <div class="strategy-info">
+              <span class="strategy-label">Стратегия:</span>
+              <span class="strategy-value" id="currentStrategy"
+                >Исследование</span
+              >
+            </div>
+          </div>
+
+          <!-- AI Controls -->
+          <div class="ai-controls">
+            <h3>🧠 AI Управление</h3>
+            <div class="control-buttons">
+              <button id="toggleAI" class="btn btn-primary">Включить AI</button>
+              <button id="resetLearning" class="btn btn-secondary">
+                Сбросить обучение
+              </button>
+            </div>
+
+            <div class="ai-status">
+              <span class="ai-label">AI Статус:</span>
+              <span class="ai-value" id="aiStatus">Отключен</span>
+            </div>
+
+            <div class="last-action">
+              <span class="action-label">Последнее действие:</span>
+              <span class="action-value" id="lastAction">-</span>
+            </div>
+          </div>
+
+          <!-- Environment Controls -->
+          <div class="environment-controls">
+            <h3>🌍 Управление средой</h3>
+            <div class="control-group">
+              <label for="surfaceType">Тип поверхности:</label>
+              <select id="surfaceType" class="form-control">
+                <option value="flat">Плоская</option>
+                <option value="hills">Холмы</option>
+                <option value="stairs">Лестницы</option>
+                <option value="obstacles">Препятствия</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label for="difficulty">Сложность:</label>
+              <input
+                type="range"
+                id="difficulty"
+                min="1"
+                max="10"
+                value="5"
+                class="slider"
+              />
+              <span class="slider-value" id="difficultyValue">5</span>
+            </div>
+
+            <button id="generateEnvironment" class="btn btn-success">
+              Сгенерировать среду
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <p>
+          3D AI Learning Character - Интерактивное обучение с Three.js и Ollama
+          | FULLSTACK DEVELOPER - IVAN KORENETS
+        </p>
+      </footer>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <h2>Загрузка 3D сцены...</h2>
+        <p>Пожалуйста, подождите</p>
+      </div>
+    </div>
+
+    <script src="js/Character.js"></script>
+    <script src="js/Environment.js"></script>
+    <script src="js/AnimationSystem.js"></script>
+    <script src="js/AIController.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
