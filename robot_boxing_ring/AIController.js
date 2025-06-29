@@ -16,11 +16,20 @@ export default class AIController {
     if (this.isThinking) return;
     this.isThinking = true;
     const prompt = this.buildPrompt();
-    this.socket.emit("llama_decision", { prompt });
+    setTimeout(() => {
+      this.socket.emit("llama_decision", { prompt });
+    }, 200 + Math.random() * 300);
   }
 
   buildPrompt() {
-    // Формируем промпт для LLaMA на основе состояния боя
+    let strategy = "";
+    if (this.opponent.lastAction === "attack") {
+      strategy = "Противник часто атакует — чаще уклоняйся или блокируй.";
+    } else if (this.opponent.lastAction === "defend") {
+      strategy = "Противник защищается — попробуй атаковать.";
+    } else if (this.robot.health < 40) {
+      strategy = "У тебя мало здоровья — чаще защищайся или уклоняйся.";
+    }
     return (
       `Ты управляешь роботом-боксером. Твои действия: attack (атака), defend (защита), dodge (уклонение).\n` +
       `Твое здоровье: ${this.robot.health}, очки: ${this.robot.score}.\n` +
@@ -28,6 +37,7 @@ export default class AIController {
       `Последнее действие противника: ${
         this.opponent.lastAction || "none"
       }.\n` +
+      `${strategy}\n` +
       `Выбери следующее действие (attack/defend/dodge):`
     );
   }

@@ -205,6 +205,20 @@ export default class RingScene {
   animate() {
     requestAnimationFrame(this.animate);
     const delta = this.clock.getDelta();
+    let shake = 0;
+    if (
+      this.robot1.animState === "hit" ||
+      this.robot2.animState === "hit" ||
+      this.robot1.animState === "uppercut" ||
+      this.robot2.animState === "uppercut" ||
+      this.robot1.animState === "hook" ||
+      this.robot2.animState === "hook"
+    ) {
+      shake = Math.sin(performance.now() * 0.04) * 0.18;
+    }
+    // Камера с тряской
+    this.camera.position.set(shake, 8 + shake * 0.2, 10 + shake * 0.2);
+    this.camera.lookAt(0, 1, 0);
     if (!this.checkWinner()) {
       if (!this.ai1.isThinking) this.ai1.requestDecision();
       if (!this.ai2.isThinking) this.ai2.requestDecision();
