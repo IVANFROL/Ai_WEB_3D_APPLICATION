@@ -86,24 +86,78 @@ export default class AIController {
     const action = this.parseAction(response);
     const oppStats = this.analyzeOpponent();
 
-    if (oppStats.defends > 3 && Math.random() > 0.2) {
+    // Используем тактическое решение робота
+    const tacticalAction = this.robot.tacticalDecision(this.opponent);
+
+    // Если тактика требует позиционирования - выполняем (особенно подход)
+    if (tacticalAction === "approach") {
+      this.robot.tacticalPositioning(this.opponent);
+      this.lastDecision = "approach";
+      return;
+    } else if (tacticalAction === "backstep" || tacticalAction === "sidestep") {
+      this.robot.tacticalPositioning(this.opponent);
+      this.lastDecision = tacticalAction;
+      return;
+    }
+
+    // Проверяем возможность специальных ударов
+    if (
+      this.robot.stamina >= 30 &&
+      this.robot.specialMoves.uppercut.cooldown <= 0 &&
+      Math.random() > 0.7
+    ) {
+      if (this.robot.specialUppercut(this.opponent)) {
+        this.lastDecision = "special_uppercut";
+        return;
+      }
+    }
+
+    if (
+      this.robot.stamina >= 25 &&
+      this.robot.specialMoves.hook.cooldown <= 0 &&
+      Math.random() > 0.6
+    ) {
+      if (this.robot.specialHook(this.opponent)) {
+        this.lastDecision = "special_hook";
+        return;
+      }
+    }
+
+    if (
+      this.robot.stamina >= 20 &&
+      this.robot.specialMoves.bodyShot.cooldown <= 0 &&
+      Math.random() > 0.5
+    ) {
+      if (this.robot.bodyShot(this.opponent)) {
+        this.lastDecision = "body_shot";
+        return;
+      }
+    }
+
+    // Более агрессивное поведение - чаще атакуем
+    if (oppStats.defends > 2 && Math.random() > 0.1) {
+      // снижаем порог с 3 до 2
       this.robot.startCombo(this.chooseCombo(), this.opponent);
       this.lastDecision = "combo";
       return;
     }
-    if (oppStats.attacks > 3 && Math.random() > 0.4) {
+    if (oppStats.attacks > 2 && Math.random() > 0.3) {
+      // снижаем порог с 3 до 2
       this.robot.dodge();
       this.lastDecision = "dodge";
       return;
     }
 
+    // Если противник бездействует — обязательно атакуем
     if (
       !this.opponent.isAttacking &&
       !this.opponent.isDefending &&
       !this.opponent.isDodging &&
-      Math.random() > 0.3
+      Math.random() > 0.1
     ) {
-      if (Math.random() > 0.5) {
+      // увеличиваем вероятность с 0.3 до 0.9
+      if (Math.random() > 0.3) {
+        // чаще используем комбо
         this.robot.startCombo(this.chooseCombo(), this.opponent);
         this.lastDecision = "combo";
       } else {
@@ -113,29 +167,37 @@ export default class AIController {
       return;
     }
 
-    if (action) {
-      if (action === "attack") {
-        if (Math.random() > 0.4) {
-          this.robot.startCombo(this.chooseCombo(), this.opponent);
-          this.lastDecision = "combo";
-        } else {
-          this.robot.attack(this.opponent);
-          this.lastDecision = "attack";
-        }
+    // Следуем тактическому решению
+    if (tacticalAction === "attack") {
+      if (Math.random() > 0.2) {
+        // увеличиваем вероятность комбо с 0.4 до 0.8
+        this.robot.startCombo(this.chooseCombo(), this.opponent);
+        this.lastDecision = "combo";
+      } else {
+        this.robot.attack(this.opponent);
+        this.lastDecision = "attack";
       }
-      if (action === "defend") {
-        this.robot.defend();
-        this.lastDecision = "defend";
-      }
-      if (action === "dodge") {
-        this.robot.dodge();
-        this.lastDecision = "dodge";
-      }
+    } else if (tacticalAction === "defend") {
+      this.robot.defend();
+      this.lastDecision = "defend";
+    } else if (tacticalAction === "dodge") {
+      this.robot.dodge();
+      this.lastDecision = "dodge";
     } else {
-      const actions = ["attack", "attack", "attack", "defend", "dodge"];
+      // Fallback: очень агрессивный случайный выбор
+      const actions = [
+        "attack",
+        "attack",
+        "attack",
+        "attack",
+        "attack",
+        "defend",
+        "dodge",
+      ]; // 5 атак из 7
       const action = actions[Math.floor(Math.random() * actions.length)];
       if (action === "attack") {
-        if (Math.random() > 0.3) {
+        if (Math.random() > 0.2) {
+          // увеличиваем вероятность комбо
           this.robot.startCombo(this.chooseCombo(), this.opponent);
           this.lastDecision = "combo";
         } else {
@@ -159,5 +221,22 @@ export default class AIController {
     if (text.includes("defend")) return "defend";
     if (text.includes("dodge")) return "dodge";
     return null;
+  }
+
+  update() {
+    if (!this.robot || !this.opponent) return;
+
+    // Проверяем дистанцию и при необходимости активно приближаемся
+    const distance = this.robot.analyzeDistance(this.opponent);
+    if (
+      distance === "too_far" &&
+      !this.robot.isAttacking &&
+      !this.robot.isDefending &&
+      !this.robot.isDodging
+    ) {
+      this.robot.approachOpponent(this.opponent);
+    }
+
+    // ... существующий код ...
   }
 }
