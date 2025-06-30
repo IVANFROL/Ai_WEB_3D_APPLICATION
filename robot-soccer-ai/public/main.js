@@ -22,6 +22,11 @@ let timeLeft = GAME_TIME;
 let lastTime = Date.now();
 let gameActive = true;
 
+// Переменные для анимации поломки
+let robot1Pieces = [];
+let robot2Pieces = [];
+let goalScored = false; // Защита от множественного засчитывания гола
+
 function init() {
   // Сцена
   scene = new THREE.Scene();
@@ -40,7 +45,7 @@ function init() {
   // Рендерер
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  document.getElementById("game-container").appendChild(renderer.domElement);
+  document.getElementById("gameContainer").appendChild(renderer.domElement);
 
   // Свет
   const ambient = new THREE.AmbientLight(0xffffff, 0.7);
@@ -203,17 +208,38 @@ function resetPositions() {
 }
 
 function updateScoreboard() {
-  document.getElementById("scoreboard").textContent = `${score1} : ${score2}`;
+  const scoreboard = document.getElementById("scoreboard");
+  if (scoreboard) {
+    scoreboard.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="color: #2080ff; font-weight: bold; font-size: 24px;">${score1}</div>
+        <div style="color: #fff; font-size: 18px;">VS</div>
+        <div style="color: #ffa040; font-weight: bold; font-size: 24px;">${score2}</div>
+      </div>
+    `;
+
+    // Анимация при обновлении счёта
+    scoreboard.classList.add("goal-animation");
+    setTimeout(() => {
+      scoreboard.classList.remove("goal-animation");
+    }, 500);
+  }
 }
 
 function updateTimer() {
-  document.getElementById("timer").textContent = `${String(
-    Math.floor(timeLeft / 60)
-  ).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`;
+  const timer = document.getElementById("timer");
+  if (timer) {
+    const minutes = Math.floor(timeLeft / 60);
+    const seconds = timeLeft % 60;
+    timer.textContent = `${String(minutes).padStart(2, "0")}:${String(
+      seconds
+    ).padStart(2, "0")}`;
+  }
 }
 
 function animate() {
   requestAnimationFrame(animate);
+
   const now = Date.now();
   if (gameActive && now - lastTime >= 1000) {
     timeLeft--;
@@ -221,13 +247,30 @@ function animate() {
     lastTime = now;
     if (timeLeft <= 0) {
       gameActive = false;
-      document.getElementById("scoreboard").textContent += "  GAME OVER";
+      const winner =
+        score1 > score2 ? "СИНИЙ" : score2 > score1 ? "ОРАНЖЕВЫЙ" : "НИЧЬЯ";
+      document.getElementById("scoreboard").innerHTML = `
+        <div style="text-align: center; color: #fff; font-size: 24px; font-weight: bold;">
+          ИГРА ОКОНЧЕНА!<br>
+          ${winner === "НИЧЬЯ" ? "НИЧЬЯ!" : `ПОБЕДИТЕЛЬ: ${winner}`}
+        </div>
+      `;
     }
   }
+
   if (gameActive) {
     aiStep();
     physicsStep();
+
+    // Анимация разбитых роботов
+    if (robot1Pieces.length > 0) {
+      animateBrokenRobot(robot1Pieces);
+    }
+    if (robot2Pieces.length > 0) {
+      animateBrokenRobot(robot2Pieces);
+    }
   }
+
   renderer.render(scene, camera);
 }
 
@@ -395,6 +438,25 @@ function physicsStep() {
     ballVelocity.z *= -0.5; // Меньший отскок от стен
   }
 
+  // Дополнительная защита: если мяч застрял в воротах, выталкиваем его
+  if (goalScored) {
+    // Если гол уже засчитан, выталкиваем мяч из ворот
+    if (
+      ball.position.x < -FIELD_WIDTH / 2 + 0.5 &&
+      Math.abs(ball.position.z) < GOAL_WIDTH / 2
+    ) {
+      ball.position.x = -FIELD_WIDTH / 2 + 0.5;
+      ballVelocity.x = Math.abs(ballVelocity.x) * 0.3; // Выталкиваем мяч
+    }
+    if (
+      ball.position.x > FIELD_WIDTH / 2 - 0.5 &&
+      Math.abs(ball.position.z) < GOAL_WIDTH / 2
+    ) {
+      ball.position.x = FIELD_WIDTH / 2 - 0.5;
+      ballVelocity.x = -Math.abs(ballVelocity.x) * 0.3; // Выталкиваем мяч
+    }
+  }
+
   // Столкновения с роботами
   collideRobot(ball, robot1);
   collideRobot(ball, robot2);
@@ -437,30 +499,173 @@ function collideRobot(ball, robot) {
 }
 
 function checkGoal() {
+  // Если гол уже засчитан, не проверяем снова
+  if (goalScored) return;
+
   // Левая сторона (гол синий)
   if (
     ball.position.x < -FIELD_WIDTH / 2 + 0.5 &&
     Math.abs(ball.position.z) < GOAL_WIDTH / 2
   ) {
+    goalScored = true; // Отмечаем, что гол засчитан
     score2++;
     updateScoreboard();
+
+    // Анимация поломки проигравшего робота (robot1)
+    if (robot1.visible) {
+      robot1.visible = false;
+      robot1Pieces = createBrokenRobotPieces(robot1, 0x2080ff);
+    }
+
     setRobotEmotion(robot2, "happy");
-    setRobotEmotion(robot1, "sad");
-    setTimeout(() => resetPositions(), 1200);
+
+    // Показываем сообщение о голе
+    showGoalMessage("ГОЛ! ОРАНЖЕВЫЙ ЗАБИЛ!");
+
+    // Сброс позиций через 2 секунды
+    setTimeout(() => {
+      resetPositions();
+      clearBrokenRobot(robot1Pieces);
+      robot1.visible = true;
+      goalScored = false; // Сбрасываем флаг после сброса позиций
+    }, 2000);
+
     return;
   }
+
   // Правая сторона (гол оранжевый)
   if (
     ball.position.x > FIELD_WIDTH / 2 - 0.5 &&
     Math.abs(ball.position.z) < GOAL_WIDTH / 2
   ) {
+    goalScored = true; // Отмечаем, что гол засчитан
     score1++;
     updateScoreboard();
+
+    // Анимация поломки проигравшего робота (robot2)
+    if (robot2.visible) {
+      robot2.visible = false;
+      robot2Pieces = createBrokenRobotPieces(robot2, 0xffa040);
+    }
+
     setRobotEmotion(robot1, "happy");
-    setRobotEmotion(robot2, "sad");
-    setTimeout(() => resetPositions(), 1200);
+
+    // Показываем сообщение о голе
+    showGoalMessage("ГОЛ! СИНИЙ ЗАБИЛ!");
+
+    // Сброс позиций через 2 секунды
+    setTimeout(() => {
+      resetPositions();
+      clearBrokenRobot(robot2Pieces);
+      robot2.visible = true;
+      goalScored = false; // Сбрасываем флаг после сброса позиций
+    }, 2000);
+
     return;
   }
+}
+
+function showGoalMessage(message) {
+  // Создаём временное сообщение о голе
+  const goalMessage = document.createElement("div");
+  goalMessage.style.cssText = `
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255, 255, 0, 0.9);
+    color: #000;
+    padding: 20px 40px;
+    border-radius: 15px;
+    font-size: 32px;
+    font-weight: bold;
+    z-index: 2000;
+    animation: goalMessage 2s ease-in-out;
+  `;
+  goalMessage.textContent = message;
+
+  // Добавляем CSS анимацию
+  const style = document.createElement("style");
+  style.textContent = `
+    @keyframes goalMessage {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+      20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+      80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  document.body.appendChild(goalMessage);
+
+  // Удаляем сообщение через 2 секунды
+  setTimeout(() => {
+    document.body.removeChild(goalMessage);
+  }, 2000);
+}
+
+function createBrokenRobotPieces(robot, color) {
+  const pieces = [];
+  const pieceCount = 8;
+
+  for (let i = 0; i < pieceCount; i++) {
+    const pieceSize = ROBOT_SIZE * (0.3 + Math.random() * 0.4);
+    const geom = new THREE.BoxGeometry(pieceSize, pieceSize, pieceSize);
+    const mat = new THREE.MeshStandardMaterial({ color });
+    const piece = new THREE.Mesh(geom, mat);
+
+    // Позиция относительно центра робота
+    piece.position.copy(robot.position);
+    piece.position.x += (Math.random() - 0.5) * 2;
+    piece.position.y += Math.random() * 1.5;
+    piece.position.z += (Math.random() - 0.5) * 2;
+
+    // Случайная скорость разлёта
+    piece.velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 0.3,
+      Math.random() * 0.2 + 0.1,
+      (Math.random() - 0.5) * 0.3
+    );
+
+    piece.rotation.x = Math.random() * Math.PI * 2;
+    piece.rotation.y = Math.random() * Math.PI * 2;
+    piece.rotation.z = Math.random() * Math.PI * 2;
+
+    pieces.push(piece);
+    scene.add(piece);
+  }
+
+  return pieces;
+}
+
+function animateBrokenRobot(pieces) {
+  pieces.forEach((piece) => {
+    // Гравитация для кусков
+    piece.velocity.y -= 0.01;
+
+    // Движение кусков
+    piece.position.add(piece.velocity);
+
+    // Вращение кусков
+    piece.rotation.x += 0.1;
+    piece.rotation.y += 0.1;
+    piece.rotation.z += 0.05;
+
+    // Столкновение с полом
+    if (piece.position.y < 0.2) {
+      piece.position.y = 0.2;
+      piece.velocity.y = Math.abs(piece.velocity.y) * 0.3;
+      piece.velocity.x *= 0.8;
+      piece.velocity.z *= 0.8;
+    }
+  });
+}
+
+function clearBrokenRobot(pieces) {
+  pieces.forEach((piece) => {
+    scene.remove(piece);
+  });
+  pieces.length = 0;
 }
 
 window.addEventListener("resize", () => {
