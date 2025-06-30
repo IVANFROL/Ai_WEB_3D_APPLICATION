@@ -8,10 +8,10 @@ let robot2Velocity = new THREE.Vector3();
 let robot1Acceleration = new THREE.Vector3();
 let robot2Acceleration = new THREE.Vector3();
 
-const FIELD_WIDTH = 16;
-const FIELD_HEIGHT = 10;
-const GOAL_WIDTH = 3;
-const GOAL_HEIGHT = 2.5;
+const FIELD_WIDTH = 28;
+const FIELD_HEIGHT = 18;
+const GOAL_WIDTH = 4.5;
+const GOAL_HEIGHT = 3;
 const BALL_RADIUS = 0.4;
 const ROBOT_SIZE = 1;
 const GAME_TIME = 60; // секунд
@@ -30,7 +30,7 @@ let goalScored = false; // Защита от множественного зас
 function init() {
   // Сцена
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf3f3f3);
+  scene.background = new THREE.Color(0x87ceeb); // Голубое небо
 
   // Камера
   camera = new THREE.PerspectiveCamera(
@@ -39,56 +39,47 @@ function init() {
     0.1,
     100
   );
-  camera.position.set(0, 13, 13);
+  camera.position.set(0, 15, 15);
   camera.lookAt(0, 0, 0);
 
   // Рендерер
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.getElementById("gameContainer").appendChild(renderer.domElement);
 
-  // Свет
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  // Освещение
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
   scene.add(ambient);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(10, 20, 10);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.width = 2048;
+  dirLight.shadow.mapSize.height = 2048;
   scene.add(dirLight);
 
-  // Поле (серый прямоугольник)
-  const fieldGeom = new THREE.PlaneGeometry(FIELD_WIDTH, FIELD_HEIGHT);
-  const fieldMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-  field = new THREE.Mesh(fieldGeom, fieldMat);
-  field.rotation.x = -Math.PI / 2;
-  scene.add(field);
-
-  // Сетка поля (белые линии)
-  const grid = new THREE.GridHelper(
-    FIELD_WIDTH,
-    FIELD_WIDTH,
-    0xffffff,
-    0xffffff
-  );
-  grid.position.y = 0.01;
-  grid.material.opacity = 0.3;
-  grid.material.transparent = true;
-  scene.add(grid);
-
-  // Ворота (левая - оранжевая, правая - синяя)
-  leftGoal = createGoal(-FIELD_WIDTH / 2 + 0.5, 0xffa040);
-  rightGoal = createGoal(FIELD_WIDTH / 2 - 0.5, 0x2080ff);
-  scene.add(leftGoal);
-  scene.add(rightGoal);
+  // Создаём реалистичное футбольное поле
+  createFootballField();
 
   // Мяч
   const ballGeom = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
-  const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const ballMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
   ball = new THREE.Mesh(ballGeom, ballMat);
   ball.position.set(0, BALL_RADIUS, 0);
+  ball.castShadow = true;
   scene.add(ball);
 
   // Роботы-кубы
   robot1 = createRobot(-3, ROBOT_SIZE / 2, 0, 0x2080ff, "neutral");
   robot2 = createRobot(3, ROBOT_SIZE / 2, 0, 0xffa040, "neutral");
+  robot1.castShadow = true;
+  robot2.castShadow = true;
   scene.add(robot1);
   scene.add(robot2);
 
@@ -97,21 +88,170 @@ function init() {
   animate();
 }
 
-function createGoal(x, color) {
-  const group = new THREE.Group();
-  // Стойки
-  const postGeom = new THREE.BoxGeometry(0.2, GOAL_HEIGHT, 0.2);
-  const postMat = new THREE.MeshStandardMaterial({ color });
-  const leftPost = new THREE.Mesh(postGeom, postMat);
-  leftPost.position.set(x, GOAL_HEIGHT / 2, -GOAL_WIDTH / 2);
-  const rightPost = new THREE.Mesh(postGeom, postMat);
-  rightPost.position.set(x, GOAL_HEIGHT / 2, GOAL_WIDTH / 2);
-  // Перекладина
-  const barGeom = new THREE.BoxGeometry(0.2, 0.2, GOAL_WIDTH + 0.2);
-  const bar = new THREE.Mesh(barGeom, postMat);
-  bar.position.set(x, GOAL_HEIGHT, 0);
-  group.add(leftPost, rightPost, bar);
-  return group;
+function createFootballField() {
+  // Основное поле (трава)
+  const fieldGeom = new THREE.PlaneGeometry(FIELD_WIDTH + 2, FIELD_HEIGHT + 2);
+  const fieldMat = new THREE.MeshStandardMaterial({
+    color: 0x2d5a27, // Тёмно-зелёная трава
+    roughness: 0.8,
+  });
+  field = new THREE.Mesh(fieldGeom, fieldMat);
+  field.rotation.x = -Math.PI / 2;
+  field.receiveShadow = true;
+  scene.add(field);
+
+  // Создаём разметку поля
+  createFieldMarkings();
+
+  // Загрузка ворот
+  loadGoalModel(-FIELD_WIDTH / 2 + 0.5, 0xffa040, true); // Левая (оранжевая)
+  loadGoalModel(FIELD_WIDTH / 2 - 0.5, 0x2080ff, false); // Правая (синяя)
+}
+
+function createFieldMarkings() {
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    linewidth: 2,
+  });
+
+  // Центральная линия
+  const centerLineGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0.01, -FIELD_HEIGHT / 2),
+    new THREE.Vector3(0, 0.01, FIELD_HEIGHT / 2),
+  ]);
+  const centerLine = new THREE.Line(centerLineGeom, lineMaterial);
+  scene.add(centerLine);
+
+  // Центральный круг
+  const centerCirclePoints = [];
+  const segments = 32;
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    centerCirclePoints.push(
+      new THREE.Vector3(Math.cos(angle) * 2, 0.01, Math.sin(angle) * 2)
+    );
+  }
+  const centerCircleGeom = new THREE.BufferGeometry().setFromPoints(
+    centerCirclePoints
+  );
+  const centerCircle = new THREE.LineLoop(centerCircleGeom, lineMaterial);
+  scene.add(centerCircle);
+
+  // Центральная точка
+  const centerPointPoints = [];
+  for (let i = 0; i <= 16; i++) {
+    const angle = (i / 16) * Math.PI * 2;
+    centerPointPoints.push(
+      new THREE.Vector3(Math.cos(angle) * 0.2, 0.01, Math.sin(angle) * 0.2)
+    );
+  }
+  const centerPointGeom = new THREE.BufferGeometry().setFromPoints(
+    centerPointPoints
+  );
+  const centerPoint = new THREE.LineLoop(centerPointGeom, lineMaterial);
+  scene.add(centerPoint);
+
+  // Штрафные площади
+  const penaltyAreaWidth = 6;
+  const penaltyAreaDepth = 3;
+
+  // Левая штрафная площадь
+  const leftPenaltyGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-FIELD_WIDTH / 2, 0.01, -penaltyAreaWidth / 2),
+    new THREE.Vector3(
+      -FIELD_WIDTH / 2 + penaltyAreaDepth,
+      0.01,
+      -penaltyAreaWidth / 2
+    ),
+    new THREE.Vector3(
+      -FIELD_WIDTH / 2 + penaltyAreaDepth,
+      0.01,
+      penaltyAreaWidth / 2
+    ),
+    new THREE.Vector3(-FIELD_WIDTH / 2, 0.01, penaltyAreaWidth / 2),
+    new THREE.Vector3(-FIELD_WIDTH / 2, 0.01, -penaltyAreaWidth / 2),
+  ]);
+  const leftPenalty = new THREE.Line(leftPenaltyGeom, lineMaterial);
+  scene.add(leftPenalty);
+
+  // Правая штрафная площадь
+  const rightPenaltyGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(FIELD_WIDTH / 2, 0.01, -penaltyAreaWidth / 2),
+    new THREE.Vector3(
+      FIELD_WIDTH / 2 - penaltyAreaDepth,
+      0.01,
+      -penaltyAreaWidth / 2
+    ),
+    new THREE.Vector3(
+      FIELD_WIDTH / 2 - penaltyAreaDepth,
+      0.01,
+      penaltyAreaWidth / 2
+    ),
+    new THREE.Vector3(FIELD_WIDTH / 2, 0.01, penaltyAreaWidth / 2),
+    new THREE.Vector3(FIELD_WIDTH / 2, 0.01, -penaltyAreaWidth / 2),
+  ]);
+  const rightPenalty = new THREE.Line(rightPenaltyGeom, lineMaterial);
+  scene.add(rightPenalty);
+
+  // Вратарские площади
+  const goalAreaWidth = 3;
+  const goalAreaDepth = 1;
+
+  // Левая вратарская площадь
+  const leftGoalAreaGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-FIELD_WIDTH / 2, 0.01, -goalAreaWidth / 2),
+    new THREE.Vector3(
+      -FIELD_WIDTH / 2 + goalAreaDepth,
+      0.01,
+      -goalAreaWidth / 2
+    ),
+    new THREE.Vector3(
+      -FIELD_WIDTH / 2 + goalAreaDepth,
+      0.01,
+      goalAreaWidth / 2
+    ),
+    new THREE.Vector3(-FIELD_WIDTH / 2, 0.01, goalAreaWidth / 2),
+    new THREE.Vector3(-FIELD_WIDTH / 2, 0.01, -goalAreaWidth / 2),
+  ]);
+  const leftGoalArea = new THREE.Line(leftGoalAreaGeom, lineMaterial);
+  scene.add(leftGoalArea);
+
+  // Правая вратарская площадь
+  const rightGoalAreaGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(FIELD_WIDTH / 2, 0.01, -goalAreaWidth / 2),
+    new THREE.Vector3(
+      FIELD_WIDTH / 2 - goalAreaDepth,
+      0.01,
+      -goalAreaWidth / 2
+    ),
+    new THREE.Vector3(FIELD_WIDTH / 2 - goalAreaDepth, 0.01, goalAreaWidth / 2),
+    new THREE.Vector3(FIELD_WIDTH / 2, 0.01, goalAreaWidth / 2),
+    new THREE.Vector3(FIELD_WIDTH / 2, 0.01, -goalAreaWidth / 2),
+  ]);
+  const rightGoalArea = new THREE.Line(rightGoalAreaGeom, lineMaterial);
+  scene.add(rightGoalArea);
+}
+
+function loadGoalModel(x, color, isLeft) {
+  const loader = new GLTFLoader();
+  loader.load(
+    "football_goal.glb",
+    function (gltf) {
+      const goal = gltf.scene;
+      // Точный масштаб
+      goal.scale.set(1.0, 1.0, 1.0);
+      // Сдвиг по X: чуть ближе к краю поля
+      // Для левых ворот: x + 0.2, для правых: x - 0.2
+      goal.position.set(isLeft ? x + 0.2 : x - 0.2, 0, 0);
+      // Разворот
+      goal.rotation.y = isLeft ? Math.PI / 2 : -Math.PI / 2;
+      scene.add(goal);
+    },
+    undefined,
+    function (error) {
+      console.error("Ошибка загрузки ворот:", error);
+    }
+  );
 }
 
 function createFaceTexture(emotion = "neutral", color = "#222") {
